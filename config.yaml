@@ -1,0 +1,30 @@
+effis_path: ../iride_onboard-burnscar-mapper/data/PHISAT_5fbf994ef5774ab882bf7239ec8b32f5.zip
+countries: [IT, FR, ES, EL]
+start_date: "2020-01-01"
+end_date: "2026-08-04"
+min_area_ha: 100.0
+southern_france_max_lat: 46.0
+
+post_fire_min_days: 5
+post_fire_max_days: 60
+fresh_burn_max_days: 90
+burn_max_age_days: 365
+maxcc: 0.70
+max_candidate_dates: 5
+burn_cloud_max_fraction: 0.15
+
+ndwi_threshold: 0.05
+use_scl_water: true
+include_scl_cirrus_as_cloud: false
+
+bbox_size_m: 2560
+s2_resolution_m: 10
+
+total_budget_gb: 93
+country_quota: {IT: 0.60, FR: 0.1333, ES: 0.1333, EL: 0.1333}
+min_free_gb: 20
+workers: 2
+
+hf_repo_id: "paramkaur10/burn2scar"
+out_dir: "./output"
+cache_folder: "./temp_data"

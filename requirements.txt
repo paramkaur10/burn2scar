@@ -1,0 +1,10 @@
+sentinelhub
+eo-learn
+geopandas
+rasterio
+numpy
+pandas
+omnicloudmask
+huggingface_hub
+python-dotenv
+pyyaml
