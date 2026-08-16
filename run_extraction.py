@@ -37,6 +37,10 @@ def main():
     fires_all = load_effis(cfg["effis_path"], countries=cfg["countries"],
                            start_date=cfg["start_date"], end_date=cfg["end_date"],
                            min_area_ha=cfg["min_area_ha"])
+    if cfg.get("max_area_ha"):
+        before = len(fires_all)
+        fires_all = fires_all[fires_all["area_ha"] <= cfg["max_area_ha"]]
+        log.info("max_area_ha filter: %d -> %d fires", before, len(fires_all))
     is_fr = fires_all["country"] == "FR"
     southern_ok = ~is_fr | (fires_all.geometry.centroid.y <= cfg["southern_france_max_lat"])
     fires = fires_all[southern_ok].reset_index(drop=True)

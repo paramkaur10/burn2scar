@@ -1,8 +1,10 @@
-effis_path: ../iride_onboard-burnscar-mapper/data/PHISAT_5fbf994ef5774ab882bf7239ec8b32f5.zip
+effis_path: effis/5fbf994ef5774ab882bf7239ec8b32f5.zip
 countries: [IT, FR, ES, EL]
 start_date: "2020-01-01"
 end_date: "2026-08-04"
 min_area_ha: 100.0
+max_area_ha: 2000.0        # excludes mega-fires -> redundant all-burn tiles
+max_area_ha: 2000.0 
 southern_france_max_lat: 46.0
 
 post_fire_min_days: 5
@@ -25,6 +27,6 @@ country_quota: {IT: 0.60, FR: 0.1333, ES: 0.1333, EL: 0.1333}
 min_free_gb: 20
 workers: 2
 
-hf_repo_id: "paramkaur10/burn2scar"
+hf_repo_id: "neet1797/burn2scar"
 out_dir: "./output"
 cache_folder: "./temp_data"
