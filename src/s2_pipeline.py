@@ -9,9 +9,8 @@ from rasterio.features import rasterize
 from rasterio.transform import from_bounds
 
 from eolearn.core import EOTask, FeatureType
-from sentinelhub import (
-    BBox, DataCollection, SentinelHubCatalog, SentinelHubInputTask, SHConfig,
-)
+from sentinelhub import BBox, DataCollection, SentinelHubCatalog, SHConfig
+from eolearn.io import SentinelHubInputTask
 from sentinelhub.geo_utils import get_utm_crs, wgs84_to_utm
 
 log = logging.getLogger(__name__)
