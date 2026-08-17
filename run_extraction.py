@@ -75,6 +75,28 @@ def main():
         country, fid = fire_row["country"], fire_row["fire_id"]
         if fid in done_fire_ids:
             return "already done", 0
+
+        # CDSE-cost protection: if this fire was already downloaded in a
+        # previous run (interrupted, crashed, or upload-failed) but never
+        # successfully uploaded, retry the upload WITHOUT re-downloading —
+        # the CDSE processing units for this fire are already spent.
+        existing_fire_dir = os.path.join(cfg["out_dir"], "acquisitions", fid)
+        if os.path.isdir(existing_fire_dir) and any(
+            f.endswith("_mask.tif")
+            for _, _, fs in os.walk(existing_fire_dir) for f in fs
+        ):
+            log.info("[%s] found complete local files from a prior attempt - "
+                     "retrying upload only, no re-download", fid)
+            size = upload_and_cleanup(api, cfg["hf_repo_id"], existing_fire_dir, fid)
+            if size is not None:
+                with lock:
+                    running_by_country[country] = running_by_country.get(country, 0) + size
+                    done_fire_ids.add(fid)
+                    save_quota_state(quota_path, {"running_by_country": running_by_country,
+                                                  "done_fire_ids": list(done_fire_ids)})
+                return "ok (uploaded from local cache)", size
+            return "upload failed again - will retry next run", 0
+
         if stop_flags.get("total") or stop_flags.get(country):
             return f"skipped ({country}/total budget reached)", 0
         if free_gb() < cfg["min_free_gb"]:
