@@ -139,8 +139,17 @@ def main():
             uploader_stop.wait(UPLOAD_BATCH_SECONDS)
             if not os.path.isdir(acq_dir):
                 continue
-            pending = [d for d in os.listdir(acq_dir)
-                      if os.path.isdir(os.path.join(acq_dir, d)) and d not in done_fire_ids]
+            import time as _time
+            def _is_stable(fdir, min_age_s=30):
+                paths = [os.path.join(r, f) for r, _, fs in os.walk(fdir) for f in fs]
+                if not paths:
+                    return False
+                newest = max(os.path.getmtime(p) for p in paths)
+                return (_time.time() - newest) > min_age_s
+
+            candidates = [d for d in os.listdir(acq_dir)
+                         if os.path.isdir(os.path.join(acq_dir, d)) and d not in done_fire_ids]
+            pending = [d for d in candidates if _is_stable(os.path.join(acq_dir, d))]
             if not pending:
                 continue
             log.info("batch upload: %d fires pending", len(pending))
