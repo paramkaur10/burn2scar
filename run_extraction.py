@@ -118,16 +118,10 @@ def main():
             files = process_fire(fire_row, fires, run_cfg, sh)
             if not files:
                 return "skipped", 0
-            fire_dir = os.path.dirname(os.path.dirname(files[0]))
-            size = upload_and_cleanup(api, cfg["hf_repo_id"], fire_dir, fid)
-            if size is None:
-                return "upload failed - will retry", 0
-            with lock:
-                running_by_country[country] = running_by_country.get(country, 0) + size
-                done_fire_ids.add(fid)
-                save_quota_state(quota_path, {"running_by_country": running_by_country,
-                                              "done_fire_ids": list(done_fire_ids)})
-            return "ok (uploaded)", size
+            # NOTE: no per-fire upload here anymore — a separate batch uploader
+            # thread handles this every UPLOAD_BATCH_SECONDS, to stay well under
+            # HF's commit-rate limit (one-commit-per-fire triggered sustained 429s)
+            return "ok (downloaded, queued for batch upload)", 0
         finally:
             gc.collect()
             try:
@@ -135,6 +129,43 @@ def main():
             except Exception:
                 pass
             shutil.rmtree(run_cfg["cache_folder"], ignore_errors=True)
+
+    UPLOAD_BATCH_SECONDS = 120
+    uploader_stop = threading.Event()
+
+    def uploader_loop():
+        acq_dir = os.path.join(cfg["out_dir"], "acquisitions")
+        while not uploader_stop.is_set():
+            uploader_stop.wait(UPLOAD_BATCH_SECONDS)
+            if not os.path.isdir(acq_dir):
+                continue
+            pending = [d for d in os.listdir(acq_dir)
+                      if os.path.isdir(os.path.join(acq_dir, d)) and d not in done_fire_ids]
+            if not pending:
+                continue
+            log.info("batch upload: %d fires pending", len(pending))
+            try:
+                api.upload_folder(folder_path=acq_dir, path_in_repo="acquisitions",
+                                  repo_id=cfg["hf_repo_id"], repo_type="dataset")
+                with lock:
+                    for fid in pending:
+                        fdir = os.path.join(acq_dir, fid)
+                        size = sum(os.path.getsize(os.path.join(r, f))
+                                  for r, _, fs in os.walk(fdir) for f in fs)
+                        country = fires.loc[fires["fire_id"] == fid, "country"].iloc[0] \
+                            if (fires["fire_id"] == fid).any() else "NA"
+                        running_by_country[country] = running_by_country.get(country, 0) + size
+                        done_fire_ids.add(fid)
+                        shutil.rmtree(fdir, ignore_errors=True)
+                    save_quota_state(quota_path, {"running_by_country": running_by_country,
+                                                  "done_fire_ids": list(done_fire_ids)})
+                log.info("batch upload OK: %d fires, total %.2f/%d GB",
+                        len(pending), sum(running_by_country.values())/1e9, cfg["total_budget_gb"])
+            except Exception as exc:
+                log.error("batch upload failed, will retry next cycle: %s", str(exc)[:300])
+
+    uploader_thread = threading.Thread(target=uploader_loop, daemon=True)
+    uploader_thread.start()
 
     index_rows = []
     with ThreadPoolExecutor(max_workers=cfg["workers"]) as pool:
@@ -151,6 +182,9 @@ def main():
             log.info("progress %d/%d | total uploaded %.1f/%d GB | free disk %.0f GB",
                      len(index_rows), len(fires), sum(running_by_country.values()) / 1e9,
                      cfg["total_budget_gb"], free_gb())
+
+    uploader_stop.set()
+    uploader_thread.join(timeout=UPLOAD_BATCH_SECONDS + 30)
 
     pd.DataFrame(index_rows).to_csv(os.path.join(cfg["out_dir"], "processing_index.csv"), index=False)
     log.info("Done. Total uploaded: %.2f GB", sum(running_by_country.values()) / 1e9)
