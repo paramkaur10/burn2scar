@@ -213,9 +213,9 @@ def export_products(eopatch, out_dir, fire_id):
     return written
 
 
-def get_candidate_dates(bbox, fire_date, cfg, sh, max_retries=3, retry_delay=15):
-    t0 = (fire_date + dt.timedelta(days=cfg["post_fire_min_days"])).date().isoformat()
-    t1 = (fire_date + dt.timedelta(days=cfg["post_fire_max_days"])).date().isoformat()
+def get_candidate_dates_window(bbox, fire_date, cfg, sh, day_min, day_max, max_retries=3, retry_delay=15):
+    t0 = (fire_date + dt.timedelta(days=day_min)).date().isoformat()
+    t1 = (fire_date + dt.timedelta(days=day_max)).date().isoformat()
     for attempt in range(1, max_retries + 1):
         try:
             results = list(SentinelHubCatalog(sh).search(
@@ -232,22 +232,21 @@ def get_candidate_dates(bbox, fire_date, cfg, sh, max_retries=3, retry_delay=15)
                             ("NameResolutionError", "ConnectionError", "Max retries exceeded"))
             if transient and attempt < max_retries:
                 log.warning("Catalog search failed (attempt %d/%d, retrying in %ds): %s",
-                           attempt, max_retries, retry_delay, msg.splitlines()[0])
+                           attempt, max_retries, retry_delay, msg[:200])
                 time.sleep(retry_delay)
                 continue
-            log.warning("Catalog search failed: %s", msg.splitlines()[0])
+            log.warning("Catalog search failed: %s", msg[:500])
             return []
     return []
 
 
-def process_fire(fire_row, fires_gdf, cfg, sh):
+def _find_best_scene(bbox, fire_row, fires_gdf, cfg, sh, day_min, day_max, window_label):
+    """Searches [fire_date+day_min, fire_date+day_max] for the least-cloudy scene
+    where the fire's own scar is not badly obscured. Returns (eopatch, date) or (None, None)."""
     fire_id = fire_row["fire_id"]
-    centroid = fire_row.geometry.centroid
-    bbox = get_utm_bbox(centroid.y, centroid.x, cfg["bbox_size_m"])
-
-    candidates = get_candidate_dates(bbox, fire_row["fire_date"], cfg, sh)
+    candidates = get_candidate_dates_window(bbox, fire_row["fire_date"], cfg, sh, day_min, day_max)
     if not candidates:
-        log.info("[%s] no S2 acquisitions found - skipped", fire_id); return []
+        return None, None
 
     aux = {"processing": {"upsampling": "BICUBIC"}}
     accepted_eop = accepted_date = None
@@ -280,8 +279,8 @@ def process_fire(fire_row, fires_gdf, cfg, sh):
         burn = eop.mask["BURN"][0, ..., 0].astype(bool)
         obscured = (eop.mask["OCM_CLOUD"][0, ..., 0] | eop.mask["OCM_SHADOW"][0, ..., 0]).astype(bool)
         frac = (burn & obscured).sum() / max(burn.sum(), 1)
-        log.info("[%s] candidate %s (scene cc=%.0f%%) burn-scar obscured=%.1f%%",
-                 fire_id, date, cc, frac * 100)
+        log.info("[%s] %s-window candidate %s (cc=%.0f%%) obscured=%.1f%%",
+                 fire_id, window_label, date, cc, frac * 100)
 
         if fallback_eop is None or frac < fallback_frac:
             fallback_eop, fallback_date, fallback_frac = eop, date, frac
@@ -291,25 +290,45 @@ def process_fire(fire_row, fires_gdf, cfg, sh):
 
     if accepted_eop is None:
         if fallback_eop is None:
-            log.info("[%s] no usable acquisition - skipped", fire_id); return []
-        log.warning("[%s] no candidate met %.0f%% threshold - using best available "
-                    "%s (%.1f%% obscured)", fire_id, cfg["burn_cloud_max_fraction"] * 100,
-                    fallback_date, fallback_frac * 100)
+            return None, None
         accepted_eop, accepted_date = fallback_eop, fallback_date
+    return accepted_eop, accepted_date
 
-    eop, date = accepted_eop, accepted_date
-    log.info("[%s] fire %s (%.0f ha) -> S2 date %s accepted", fire_id,
-             fire_row["fire_date"].date(), fire_row.get("area_ha", np.nan), date)
 
-    eop = BurnScarRasterTask(fires_gdf, (FeatureType.DATA, "BANDS"),
-                             output_feature=(FeatureType.MASK, "BURN_FRESH"),
-                             min_age_days=-1, max_age_days=cfg["fresh_burn_max_days"])(eop)
-    eop = BurnScarRasterTask(fires_gdf, (FeatureType.DATA, "BANDS"),
-                             output_feature=(FeatureType.MASK, "BURN_OLD"),
-                             min_age_days=cfg["fresh_burn_max_days"],
-                             max_age_days=cfg["burn_max_age_days"])(eop)
-    eop = CombineMaskTask(include_cirrus=cfg["include_scl_cirrus_as_cloud"])(eop)
+def process_fire(fire_row, fires_gdf, cfg, sh):
+    """For each fire, acquires a 'fresh' scene (post_fire_min/max_days window) and,
+    if enabled, a second 'old' scene (old_scene_min/max_days window) so old_burn
+    can appear for the fire the tile is actually centered on, not just from
+    incidental overlap with other fires."""
+    fire_id = fire_row["fire_id"]
+    centroid = fire_row.geometry.centroid
+    bbox = get_utm_bbox(centroid.y, centroid.x, cfg["bbox_size_m"])
 
-    files = export_products(eop, cfg["out_dir"], fire_id)
-    log.info("[%s] wrote %d files", fire_id, len(files))
-    return files
+    windows = [("fresh", cfg["post_fire_min_days"], cfg["post_fire_max_days"])]
+    if cfg.get("acquire_old_scene", False):
+        windows.append(("old", cfg["old_scene_min_days"], cfg["old_scene_max_days"]))
+
+    written = []
+    for label, day_min, day_max in windows:
+        eop, date = _find_best_scene(bbox, fire_row, fires_gdf, cfg, sh, day_min, day_max, label)
+        if eop is None:
+            log.info("[%s] no usable %s-window acquisition - skipped", fire_id, label)
+            continue
+
+        log.info("[%s] fire %s (%.0f ha) -> %s-window S2 date %s accepted", fire_id,
+                 fire_row["fire_date"].date(), fire_row.get("area_ha", np.nan), label, date)
+
+        eop = BurnScarRasterTask(fires_gdf, (FeatureType.DATA, "BANDS"),
+                                 output_feature=(FeatureType.MASK, "BURN_FRESH"),
+                                 min_age_days=-1, max_age_days=cfg["fresh_burn_max_days"])(eop)
+        eop = BurnScarRasterTask(fires_gdf, (FeatureType.DATA, "BANDS"),
+                                 output_feature=(FeatureType.MASK, "BURN_OLD"),
+                                 min_age_days=cfg["fresh_burn_max_days"],
+                                 max_age_days=cfg["burn_max_age_days"])(eop)
+        eop = CombineMaskTask(include_cirrus=cfg["include_scl_cirrus_as_cloud"])(eop)
+
+        files = export_products(eop, cfg["out_dir"], fire_id)
+        log.info("[%s] wrote %d files (%s window)", fire_id, len(files), label)
+        written.extend(files)
+
+    return written
