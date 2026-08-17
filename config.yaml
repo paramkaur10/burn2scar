@@ -2,7 +2,7 @@ effis_path: effis/5fbf994ef5774ab882bf7239ec8b32f5.zip
 countries: [IT, FR, ES, EL]
 start_date: "2020-01-01"
 end_date: "2026-08-04"
-min_area_ha: 100.0
+min_area_ha: 5.0
 max_area_ha: 2000.0
 southern_france_max_lat: 46.0
 post_fire_min_days: 5
