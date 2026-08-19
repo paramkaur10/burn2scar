@@ -25,8 +25,8 @@ s2_resolution_m: 10
 total_budget_gb: 40
 country_quota: {IT: 0.60, FR: 0.1333, ES: 0.1333, EL: 0.1333}
 min_free_gb: 2    # streaming architecture — each fire only needs a few MB locally, not GB
-workers: 1    # reduces HF commit rate-limiting
-ocm_device: "cpu"    # force CPU inference — GPUs reserved for other work
+workers: 2    # batch uploader already handles rate-limiting independently
+ocm_device: "gpu"    # force CPU inference — GPUs reserved for other work
 hf_repo_id: "neet1797/burn2scar"
 out_dir: "./output"
 cache_folder: "./temp_data"

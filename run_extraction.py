@@ -65,6 +65,7 @@ def main():
 
     country_budget_bytes = {c: frac * cfg["total_budget_gb"] * 1e9
                             for c, frac in cfg["country_quota"].items()}
+    device_cycle = itertools.cycle(["cuda:0", "cuda:1"])
     lock = threading.Lock()
     stop_flags = {}
 
@@ -113,7 +114,7 @@ def main():
                 return "skipped (total budget reached)", 0
 
         run_cfg = copy.deepcopy(cfg)
-        run_cfg["ocm_device"] = "cpu"
+        run_cfg["ocm_device"] = next(device_cycle)
         try:
             files = process_fire(fire_row, fires, run_cfg, sh)
             if not files:
