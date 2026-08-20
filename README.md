@@ -39,6 +39,25 @@ satellite acquisition date.
 
 ---
 
+## Label purity notes
+
+`clear` is a residual class — anything not detected as burn, cloud, shadow, or
+water — not a confirmed "vegetation" or "undisturbed land" label. Depending on
+your use case this matters: Mediterranean terrain in particular can put bare
+soil, exposed rock, and volcanic terrain (present in both Italy and Greece,
+two of this dataset's source countries) into `clear`, since the pipeline has no
+separate class for them. If your application needs a purer vegetation mask,
+combine this dataset with a land-cover product (e.g. ESA WorldCover) and filter
+`clear` further based on your own criteria.
+
+Burn labels themselves are only as complete as EFFIS's own detection. EFFIS's
+documented minimum mapping unit for burnt-area products is **10 hectares** —
+fires smaller than that are not labeled by EFFIS at all, and so appear as
+`clear` in this dataset rather than `fresh_burn`/`old_burn`, even where a real
+(sub-threshold) fire occurred.
+
+---
+
 ## Two scenes per fire
 
 Each fire gets **two independently-acquired Sentinel-2 scenes**, searched in
@@ -72,8 +91,31 @@ Fires are drawn from an EFFIS export, filtered by:
 | Minimum area | 5 hectares (excludes marginal / low-confidence micro-detections) |
 | Maximum area | 2,000 hectares (excludes mega-fires large enough to make a single tile 100% burn scar, with no useful boundary signal) |
 
-**~19,500 fires** queued after filtering, each producing up to two scene/mask pairs
-(fresh + old window), targeting an overall dataset size of roughly **40 GB**.
+**19,443 fires** queued after filtering; **13,903 fires** yielded at least one
+usable, sufficiently cloud-free acquisition (the remainder had no candidate scene
+passing the cloud/obscuration threshold in either window) — producing
+**26,854 scene/mask pairs** and **30.57 GB** total.
+
+---
+
+## Class distribution
+
+Computed across all 26,854 masks (1.76 billion pixels total):
+
+| Class | % of valid pixels |
+|---|---|
+| clear | 82.62% |
+| old_burn | 7.21% |
+| fresh_burn | 7.12% |
+| water | 2.32% |
+| cloud | 0.54% |
+| shadow | 0.19% |
+
+0.95% of all pixels are nodata (tile-edge artifacts from UTM reprojection),
+excluded from the percentages above. Fresh and old burn are closely balanced —
+a direct result of acquiring two independent time windows per fire (see
+"Two scenes per fire" above) rather than relying on incidental overlap with
+other fires' perimeters.
 
 ---
 
