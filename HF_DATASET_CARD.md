@@ -33,10 +33,12 @@ dataset provides two Sentinel-2 acquisitions — one taken shortly after the fir
 one taken several months later — each paired with a 7-class segmentation mask
 identifying clear land, fresh burn, old burn, cloud, cloud shadow, water, and nodata.
 
-- **~19,500 fires**, each with up to two scene/mask pairs
+- **13,903 fires** with at least one usable acquisition (19,443 queried; the
+ remainder had no candidate scene passing the cloud/obscuration threshold in
+ either window), **26,854 scene/mask pairs** total
 - **Countries**: Italy, France (south of 46°N), Spain, Greece
 - **Date range**: 2020–2026
-- **~40 GB** total
+- **30.57 GB** total
 
 ---
 
@@ -51,6 +53,27 @@ identifying clear land, fresh burn, old burn, cloud, cloud shadow, water, and no
 | 5 | cloud shadow | Detected via OmniCloudMask |
 | 6 | water | NDWI > 0.05, or Sentinel-2 SCL value 6 |
 | 255 | nodata | Outside the valid data mask |
+
+---
+
+## Class distribution
+
+Computed across all 26,854 masks (1.76 billion pixels total):
+
+| Class | % of valid pixels |
+|---|---|
+| clear | 82.62% |
+| old_burn | 7.21% |
+| fresh_burn | 7.12% |
+| water | 2.32% |
+| cloud | 0.54% |
+| shadow | 0.19% |
+
+0.95% of all pixels are nodata (tile-edge artifacts from UTM reprojection),
+excluded from the percentages above. Fresh and old burn are closely balanced —
+a result of acquiring two independent time windows per fire rather than relying
+on incidental overlap with other fires' perimeters. See **Limitations** below
+for what `clear` does and doesn't represent.
 
 ---
 
@@ -141,13 +164,21 @@ make a single tile 100% burn scar with no useful class boundary.
 
 - **No pre-fire baseline.** Both acquisition windows are strictly post-fire; this
  dataset does not provide a true "before" image for change-detection-style pairing.
-- **old_burn is comparatively rare.** Because both windows search only forward in
- time from ignition, old_burn labels arise either from the tile's own fire (once
- enough time has passed) or from incidental overlap with a different, separately
- dated fire. Class balance should be checked empirically before training.
 - **Cloud cover permitted elsewhere in-frame.** Scene selection requires the burn
  scar itself to be minimally obscured (≤ 50%), but up to 70% cloud cover is
  permitted in the wider scene outside the scar.
+- **`clear` is a residual class, not a confirmed vegetation label.** It covers
+ anything not detected as burn, cloud, shadow, or water. Mediterranean terrain
+ in particular can put bare soil, exposed rock, and volcanic terrain (present
+ in both Italy and Greece) into `clear`, since there is no separate class for
+ them. Users needing a purer vegetation mask should combine this dataset with
+ a land-cover product (e.g. ESA WorldCover) and filter further based on their
+ own criteria.
+- **Burn labels are only as complete as EFFIS's own detection.** EFFIS's
+ documented minimum mapping unit for burnt-area products is 10 hectares —
+ fires smaller than that are not labeled by EFFIS, and so appear as `clear`
+ in this dataset rather than `fresh_burn`/`old_burn`, even where a real
+ (sub-threshold) fire occurred.
 
 ---
 
