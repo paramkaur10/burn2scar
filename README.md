@@ -98,6 +98,19 @@ passing the cloud/obscuration threshold in either window) — producing
 
 ---
 
+## Fire population overview
+
+![Fires overview](figures/fires_overview.png)
+
+Characteristics of the underlying EFFIS-sourced fire population, after filtering
+(before acquisition — this is about the *input* fire records, not the output
+imagery). Left to right: fire count by source country, distribution of burn
+area sizes within the 5–2,000 ha bounds, and seasonal distribution of fires
+by quarter across the 2020–2026 date range — wildfire activity concentrates
+heavily in the Mediterranean summer months, as expected.
+
+---
+
 ## Class distribution
 
 Computed across all 26,854 masks (1.76 billion pixels total):
